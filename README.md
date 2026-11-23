@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/social-preview.png" alt="PFE Assistant" width="100%" />
+  <img src="https://raw.githubusercontent.com/Waelxz/pfe-assistant/main/assets/social-preview.png" alt="PFE Assistant" width="100%" />
 </p>
 
 # PFE Assistant
