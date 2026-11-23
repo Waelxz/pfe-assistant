@@ -106,8 +106,8 @@ def prepare_pdf_input(pdf_path: Path, cache_key: str | None = None) -> Any:
         # If document has adequate text, return page-delimited string (capped for smaller context windows)
         if total_text_len >= 100:
             joined = "\n\n".join(page_texts)
-            if len(joined) > 85_000:
-                joined = joined[:85_000] + "\n\n[Truncated after 85,000 characters]"
+            if len(joined) > 200_000:
+                joined = joined[:200_000] + "\n\n[Truncated after 200,000 characters]"
             return joined
 
         # Scanned brochure with low text: return base64 images (first 8 pages max)
