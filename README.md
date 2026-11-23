@@ -33,6 +33,8 @@ pip install pfe-assistant
 pfe-assistant
 ```
 
+Upgrade anytime with `pip install -U pfe-assistant` (your local profiles, SQLite database, and settings stay intact).
+
 Or from a local clone with bundled frontend:
 
 ```bash

@@ -364,7 +364,7 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
       setEmailSubject(res.email_subject || '')
       setEmailBody(res.email_body || '')
       setCoverLetterText(res.cover_letter_text || '')
-      setSuccessMsg('Draft generated with Gemini!')
+      setSuccessMsg('Draft generated with AI!')
       setTimeout(() => setSuccessMsg(null), 3000)
       onStatusChanged()
     } catch (err: any) {
@@ -880,7 +880,7 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
               <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                 <input
                   type="text"
-                  placeholder="Ask Gemini to refine (e.g. 'Make it more concise', 'Highlight CNN project')..."
+                  placeholder="Ask AI to refine (e.g. 'Make it more concise', 'Highlight RAG project')..."
                   value={regenInstruction}
                   onChange={(e) => setRegenInstruction(e.target.value)}
                   className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:ring-1 focus:ring-indigo-500"

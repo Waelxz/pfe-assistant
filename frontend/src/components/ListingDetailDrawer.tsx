@@ -313,7 +313,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                   {extracting ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Extracting with Gemini...</span>
+                      <span>Extracting &amp; scoring...</span>
                     </>
                   ) : (
                     <>

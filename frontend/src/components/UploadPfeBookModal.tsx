@@ -302,7 +302,7 @@ export const UploadPfeBookModal: React.FC<UploadPfeBookModalProps> = ({
                 Extract subjects & score profile match immediately
               </span>
               <span className="text-[11px] text-slate-500 block mt-0.5">
-                Uses Gemini to parse all internship topics, application rules, and calculate profile compatibility scores right away.
+                Uses your AI model to parse all internship topics, application rules, and calculate profile compatibility scores right away.
               </span>
             </div>
           </label>

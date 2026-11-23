@@ -36,7 +36,7 @@ export const SyncProgressBanner: React.FC<SyncProgressBannerProps> = ({
                   : progress.step === 'download_pdf'
                   ? 'Downloading PFE Book PDFs...'
                   : progress.step === 'extract'
-                  ? 'Gemini PDF Extraction & Profiling...'
+                  ? 'AI PDF Extraction & Scoring...'
                   : 'Syncing PFE Catalogues...'}
               </span>
               {progress.listing_slug && (

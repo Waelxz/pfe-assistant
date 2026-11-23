@@ -440,7 +440,7 @@ export function App() {
                     {highMatchCount}
                   </span>
                   <span className="text-[11px] text-slate-400 mt-0.5 block">
-                    AI/ML, BI & Big Data
+                    Matched to your profile
                   </span>
                 </div>
 
