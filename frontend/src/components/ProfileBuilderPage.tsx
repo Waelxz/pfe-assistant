@@ -427,6 +427,7 @@ export const ProfileBuilderPage: React.FC<ProfileBuilderPageProps> = ({
       setActiveMetrics({
         page_count: previewRes.page_count ?? 1,
         last_y1_pt: previewRes.last_y1_pt ?? 0,
+        max_y1_pt: 825,
         valid: previewRes.valid_1_page,
         pdf_url: previewRes.pdf_url,
         png_url: previewRes.png_url,
