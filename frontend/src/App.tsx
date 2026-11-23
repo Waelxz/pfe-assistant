@@ -414,7 +414,7 @@ export function App() {
                   className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs"
                 >
                   <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
-                    Gemini Extracted
+                    Extracted &amp; Scored
                   </span>
                   <span className="text-2xl font-bold text-indigo-600 mt-1 block">
                     {extractedCount}
