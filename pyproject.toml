@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pfe-assistant"
+version = "0.2.0"
+description = "Local-first BYOK assistant for matching PFE internship brochures, drafting tailored applications, and compiling 1-page Typst CVs."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [
+    { name = "PFE Assistant Contributors" }
+]
+keywords = ["pfe", "internship", "cv", "resume", "rendercv", "typst", "byok", "fastapi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "rendercv[full]",
+    "pymupdf",
+    "pyyaml",
+    "pydantic>=2.0",
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy>=2.0",
+    "alembic",
+    "httpx",
+    "beautifulsoup4",
+    "lxml",
+    "google-genai",
+    "python-dotenv",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.scripts]
+pfe-assistant = "backend.app.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[tool.setuptools.package-data]
+"backend.app" = [
+    "llm/prompts/*.md",
+    "cv/themes/pfeclassic/*.py",
+    "cv/themes/pfeclassic/*.typ",
+    "cv/themes/pfeclassic/entries/*.typ",
+    "static/**/*",
+    "static/*",
+]

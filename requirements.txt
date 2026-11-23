@@ -1,0 +1,15 @@
+rendercv[full]
+pymupdf
+pyyaml
+pydantic
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+alembic
+httpx
+beautifulsoup4
+lxml
+google-genai
+python-dotenv
+python-multipart
+pytest

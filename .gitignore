@@ -1,0 +1,39 @@
+# Personal / local candidate profile & reference docs (never commit)
+docs/
+profile/
+waelclassic/
+.env
+.env.*
+!.env.example
+
+# Internal project tracking & agent state
+.projectmem/
+.agents/
+.codegraph/
+AGENTS.md
+PROJECT_MAP.md
+plan.md
+
+# Runtime data, databases & generated PDFs
+data/
+output/
+*.bak
+*.zip
+
+# Python & packaging
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+rendercv_output/
+dist/
+build/
+backend/app/static/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
