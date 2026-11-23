@@ -49,21 +49,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="PFE Assistant API",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
-# Enable CORS for local Vite dev server
+# Restrict CORS to local browser origins so third-party tabs cannot probe localhost
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Serve local files (PDFs, CV previews, etc.)
-app.mount("/data", StaticFiles(directory=str(settings.data_dir)), name="data")
+# Serve only non-sensitive asset subdirectories (never expose settings.json or app.db)
+settings.ensure_directories()
+for _subdir in ("pdfs", "profiles", "applications", "documents"):
+    _mount_path = settings.data_dir / _subdir
+    _mount_path.mkdir(parents=True, exist_ok=True)
+    app.mount(f"/data/{_subdir}", StaticFiles(directory=str(_mount_path)), name=f"data_{_subdir}")
 
 # Global event queue for SSE sync progress
 _sync_queues: list[asyncio.Queue] = []
@@ -755,7 +759,7 @@ def compare_listing_subjects_endpoint(
         raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")
 
 
-async def _run_sync_task():
+async def _run_sync_task(extract_listings: bool = False):
     """Background sync worker broadcasting events to all SSE listener queues."""
     from backend.app.database import SessionLocal
 
@@ -771,7 +775,7 @@ async def _run_sync_task():
                 pass
 
     try:
-        await sync_service.run_sync(db, on_progress=on_progress)
+        await sync_service.run_sync(db, extract_listings=extract_listings, on_progress=on_progress)
     finally:
         db.close()
         # Send terminal signal
@@ -783,14 +787,14 @@ async def _run_sync_task():
 
 
 @app.post("/api/sync")
-async def trigger_sync(background_tasks: BackgroundTasks):
-    """Trigger background sync with pfebooks.com."""
+async def trigger_sync(background_tasks: BackgroundTasks, extract: bool = False):
+    """Trigger background sync with pfebooks.com (extract=False avoids burning LLM quota upfront)."""
     if _sync_lock.locked():
         return {"status": "in_progress", "message": "Sync is already running."}
 
     async def locked_worker():
         async with _sync_lock:
-            await _run_sync_task()
+            await _run_sync_task(extract_listings=extract)
 
     background_tasks.add_task(locked_worker)
     return {"status": "started", "message": "Background sync started."}

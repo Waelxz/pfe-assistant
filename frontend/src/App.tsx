@@ -537,6 +537,38 @@ export function App() {
                     Loading 2026–2027 PFE Book listings...
                   </p>
                 </div>
+              ) : listings.length === 0 ? (
+                <div className="py-16 text-center bg-white rounded-2xl border border-dashed border-slate-300 p-8 space-y-4">
+                  <Inbox className="w-12 h-12 text-indigo-300 mx-auto" />
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">
+                      Your PFE Books catalogue is empty
+                    </h3>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                      Sync the 2026–2027 PFE Books catalogue or upload any company&apos;s PFE Book PDF to extract topics and rank them against your CV.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-3 pt-1 flex-wrap">
+                    {config?.enable_pfebooks_sync !== false && (
+                      <button
+                        type="button"
+                        onClick={handleTriggerSync}
+                        disabled={isSyncing}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                        <span>{isSyncing ? 'Syncing PFE Books...' : 'Sync PFE Books (2026–2027)'}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowUploadModal(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs cursor-pointer"
+                    >
+                      <span>Upload PFE Book PDF</span>
+                    </button>
+                  </div>
+                </div>
               ) : filteredListings.length === 0 ? (
                 <div className="py-20 text-center bg-white rounded-2xl border border-dashed border-slate-300 p-8">
                   <Inbox className="w-12 h-12 text-slate-300 mx-auto mb-3" />
