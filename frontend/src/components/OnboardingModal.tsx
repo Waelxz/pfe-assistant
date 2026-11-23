@@ -81,6 +81,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const handleSelectPreset = (key: string) => {
     setPreset(key)
     setTestResult(null)
+    if (settings && key !== settings.llm_provider_preset) {
+      setApiKey('')
+    } else if (settings?.api_key_masked) {
+      setApiKey(settings.api_key_masked)
+    }
     const p: ProviderPreset | undefined = settings?.presets?.[key]
     if (!p) return
     setProvider(p.llm_provider)
@@ -89,25 +94,31 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     setFallbackModel(p.llm_fallback_model)
   }
 
-  const handleTestAndSaveKey = async (advance = false) => {
-    setSavingKey(true)
-    setTestResult(null)
-    try {
+  const persistStep1Settings = async () => {
+    if (preset === 'ollama' || apiKey.trim()) {
       await updateSettings({
         llm_provider_preset: preset,
         llm_provider: provider,
-        llm_api_key: apiKey,
+        llm_api_key: preset === 'ollama' ? '' : apiKey,
         llm_base_url: baseUrl,
         llm_model: model,
         llm_fallback_model: fallbackModel,
       })
-      setTesting(true)
+    }
+  }
+
+  const handleTestAndSaveKey = async (advance = false) => {
+    setSavingKey(true)
+    setTesting(true)
+    setTestResult(null)
+    try {
       const res = await testLLMConnection({
         llm_provider: provider,
-        llm_api_key: apiKey,
+        llm_api_key: preset === 'ollama' ? '' : apiKey,
         llm_base_url: baseUrl,
         llm_model: model,
       })
+      await persistStep1Settings()
       setTestResult({ ok: true, text: `Connected (${res.model})!` })
       if (advance) setStep(2)
     } catch (err: any) {
@@ -124,17 +135,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     setImportingPdf(true)
     setProfileErr(null)
     try {
-      // Save key first if user entered one without clicking Test
-      if (apiKey.trim()) {
-        await updateSettings({
-          llm_provider_preset: preset,
-          llm_provider: provider,
-          llm_api_key: apiKey,
-          llm_base_url: baseUrl,
-          llm_model: model,
-          llm_fallback_model: fallbackModel,
-        })
-      }
+      await persistStep1Settings()
       const res = await importProfilePdf(file)
       const prof: CandidateProfile = {
         ...res.profile,
@@ -163,6 +164,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     setLoadingSample(true)
     setProfileErr(null)
     try {
+      await persistStep1Settings()
       await loadSampleProfile('both')
       await finishOnboarding()
     } catch (err: any) {
@@ -334,7 +336,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setStep(2)}
+                    onClick={async () => {
+                      await persistStep1Settings().catch(() => {})
+                      setStep(2)
+                    }}
                     className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 cursor-pointer"
                   >
                     <span>Next: Your CV Profile</span>

@@ -728,6 +728,7 @@ LANGUAGE: {"French" if diff.language == "fr" else "English"}
 Return the shortened items in JSON conforming to the schema.
 """
     try:
+        settings = get_settings()
         active_model = settings.get_model_for_job("tailor") or DEFAULT_MODEL
         compressed_res = generate_structured_content(
             contents=[prompt],
@@ -758,9 +759,9 @@ Return the shortened items in JSON conforming to the schema.
                 ) and b.bullet_index == bc.bullet_index:
                     if allow_condense_user_modified or not b.user_modified:
                         b.proposed_text = bc.proposed_text.strip()
-    except Exception:
-        # If LLM compression fails or times out, proceed without crashing
-        pass
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("LLM auto-fit condensation failed: %s", exc)
 
     return diff
 

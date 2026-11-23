@@ -26,6 +26,7 @@ import {
 interface StagedCVDiffModalProps {
   applicationId: number
   diff: StagedCVDiff | null
+  baselineUrlPrefix?: string
   onClose: () => void
   onConfirmed: (diff: StagedCVDiff) => void
   selectedSubjects?: string[]
@@ -34,6 +35,7 @@ interface StagedCVDiffModalProps {
 export const StagedCVDiffModal: React.FC<StagedCVDiffModalProps> = ({
   applicationId,
   diff: initialDiff,
+  baselineUrlPrefix,
   onClose,
   onConfirmed,
   selectedSubjects = [],
@@ -104,12 +106,24 @@ export const StagedCVDiffModal: React.FC<StagedCVDiffModalProps> = ({
 
     try {
       setPreviewRendering(true)
-      const res = await previewCVDiff(applicationId, activeDiff)
+      setError(null)
+      const res: any = await previewCVDiff(applicationId, activeDiff)
       setPreviewPresetLevel(res.layout_preset_applied || 0)
+      if (Array.isArray(res.all_unverified_keywords)) {
+        setDiff((prev) =>
+          prev
+            ? {
+                ...prev,
+                all_unverified_keywords: res.all_unverified_keywords,
+                has_unverified_keywords: res.all_unverified_keywords.length > 0,
+              }
+            : prev
+        )
+      }
       setPreviewTimestamp(Date.now())
       setPreviewOutdated(false)
-    } catch {
-      // Ignore preview errors
+    } catch (err: any) {
+      setError(err.message || 'Preview failed (CV may exceed 1 page — shorten or uncheck items).')
     } finally {
       setPreviewRendering(false)
     }
@@ -192,9 +206,9 @@ export const StagedCVDiffModal: React.FC<StagedCVDiffModalProps> = ({
     try {
       setLoading(true)
       setError(null)
-      const res = await confirmCVDiff(applicationId, finalDiff)
+      const res: any = await confirmCVDiff(applicationId, finalDiff)
       
-      const returnedDiff = res.fitted_diff || finalDiff
+      const returnedDiff = res.diff || res.fitted_diff || finalDiff
       if (res.auto_compressed) {
         showToast('Auto-compressed & locked to 1-page layout without losing your edits!')
       } else if (res.layout_preset_applied && res.layout_preset_applied > 0) {
@@ -1139,7 +1153,10 @@ export const StagedCVDiffModal: React.FC<StagedCVDiffModalProps> = ({
                   alt="Live 1-Page CV Preview"
                   className="w-full h-auto block"
                   onError={(e: any) => {
-                    e.target.src = `/data/baseline/baseline_CV_${diff.language.toUpperCase()}.png`
+                    if (baselineUrlPrefix && !e.currentTarget.dataset.fallbackTried) {
+                      e.currentTarget.dataset.fallbackTried = '1'
+                      e.currentTarget.src = `${baselineUrlPrefix}/baseline_CV_${diff.language.toUpperCase()}.png`
+                    }
                   }}
                 />
               </div>

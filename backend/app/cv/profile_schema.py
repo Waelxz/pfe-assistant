@@ -621,10 +621,11 @@ def get_candidate_facts(profile: CandidateProfile) -> dict[str, str]:
         or (top_edu.institution if top_edu else "University")
     )
 
+    name_parts = (profile.basics.name or "").split()
     return {
         "name": profile.basics.name,
-        "first_name": profile.basics.first_name or profile.basics.name.split()[0],
-        "last_name": profile.basics.last_name or (" ".join(profile.basics.name.split()[1:]) if " " in profile.basics.name else ""),
+        "first_name": profile.basics.first_name or (name_parts[0] if name_parts else ""),
+        "last_name": profile.basics.last_name or (" ".join(name_parts[1:]) if len(name_parts) > 1 else ""),
         "email": profile.basics.email,
         "phone": profile.basics.phone,
         "location": profile.basics.location,
@@ -699,6 +700,11 @@ def save_candidate_profile(
                         break
                 except Exception:
                     continue
+            else:
+                from backend.app.cv.render import PageOverflowError
+                raise PageOverflowError(
+                    "CV content still overflows onto page 2 even at the tightest typography preset. Trim 1–2 bullets or skills."
+                )
 
     target_path.write_text(
         yaml.safe_dump(best_doc, sort_keys=False, allow_unicode=True),

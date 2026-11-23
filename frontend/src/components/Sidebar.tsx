@@ -456,7 +456,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <div className="space-y-2">
             {/* Profile Switcher */}
-            {profiles.length > 0 && onSwitchProfile && (
+            {onSwitchProfile && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <span>Active Profile</span>
@@ -472,6 +472,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                   )}
                 </div>
+                {profiles.length > 0 && (
                 <div className="flex items-center gap-1">
                   <select
                     value={config?.active_profile_id || 'local-default'}
@@ -498,6 +499,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                   )}
                 </div>
+                )}
                 {confirmDeleteProfile && config?.active_profile_id && onDeleteProfile && (
                   <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-[10px] text-rose-900 space-y-1.5">
                     <div className="font-semibold">

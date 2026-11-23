@@ -47,13 +47,14 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["PFE_DATA_DIR"] = args.data_dir
 
     port = args.port if args.reload else _find_available_port(args.host, args.port)
-    url = f"http://{args.host}:{port}"
+    browser_host = "127.0.0.1" if args.host in ("0.0.0.0", "::", "") else args.host
+    url = f"http://{browser_host}:{port}"
 
     print(f"Starting PFE Assistant on {url}")
     if not args.no_browser:
         threading.Thread(
             target=_open_browser_when_ready,
-            args=(url, args.host, port),
+            args=(url, browser_host, port),
             daemon=True,
         ).start()
 

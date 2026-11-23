@@ -191,7 +191,7 @@ def test_untracked_new_status_and_lifecycle(client):
             json={
                 "email_to": "contact@lifecycletest.com",
                 "email_subject": "Application for PFE 2026",
-                "email_body": "Dear Hiring Team,\n\nPlease find attached my CV.\n\nBest,\nWael",
+                "email_body": "Dear Hiring Team,\n\nPlease find attached my CV.\n\nBest,\nAlex",
                 "selected_subject_refs": ["SUBJ-01"],
             },
         )

@@ -340,12 +340,13 @@ export interface CVConfirmResponse {
 }
 
 export interface SyncProgressEvent {
-  step: 'start' | 'fetch_posts' | 'download_pdf' | 'extract' | 'match' | 'idle' | 'done'
+  step: 'start' | 'fetch_posts' | 'download_pdf' | 'extract' | 'match' | 'idle' | 'done' | 'error'
   listing_slug?: string | null
   current_item?: number
   total_items?: number
   message?: string | null
   progress_pct: number
+  had_error?: boolean
 }
 
 export interface ProfileBasics {

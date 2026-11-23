@@ -217,10 +217,22 @@ def create_profile(name: str, profile_id: str | None = None, activate: bool = Tr
     }
 
 
+def _resolve_profile_path(profile_id: str) -> Path:
+    """Validate profile_id and return its resolved directory safely inside profiles/."""
+    pid = (profile_id or "").strip()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", pid):
+        raise ValueError(f"Invalid profile_id '{profile_id}'")
+    root = get_profiles_root().resolve()
+    pdir = (root / pid).resolve()
+    if pdir.parent != root:
+        raise ValueError(f"Invalid profile_id '{profile_id}'")
+    return pdir
+
+
 def activate_profile(profile_id: str) -> dict[str, Any]:
     """Switch active_profile_id in settings.json and reload runtime settings."""
     migrate_legacy_profile_if_needed()
-    pdir = get_profiles_root() / profile_id
+    pdir = _resolve_profile_path(profile_id)
     if not pdir.exists():
         raise FileNotFoundError(f"Profile '{profile_id}' not found")
     cfg = get_settings()
@@ -242,13 +254,13 @@ def activate_profile(profile_id: str) -> dict[str, Any]:
 def delete_profile(profile_id: str) -> None:
     """Delete a non-active (or fallback-reassigned) profile directory."""
     migrate_legacy_profile_if_needed()
+    pdir = _resolve_profile_path(profile_id)
+    if not pdir.exists():
+        raise FileNotFoundError(f"Profile '{profile_id}' not found")
+
     all_profiles = list_profiles()
     if len(all_profiles) <= 1:
         raise ValueError("Cannot delete the last remaining profile.")
-
-    pdir = get_profiles_root() / profile_id
-    if not pdir.exists():
-        raise FileNotFoundError(f"Profile '{profile_id}' not found")
 
     if get_active_profile_id() == profile_id:
         fallback = next(p for p in all_profiles if p["id"] != profile_id)

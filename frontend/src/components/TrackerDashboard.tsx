@@ -13,6 +13,7 @@ import { isSyntheticRef, type ApplicationListItem } from '../types'
 
 interface TrackerDashboardProps {
   onOpenWorkspace: (listingId: number) => void
+  onStatusChanged?: () => void
 }
 
 const PIPELINE_COLUMNS: {
@@ -53,7 +54,10 @@ const PIPELINE_COLUMNS: {
   },
 ]
 
-export const TrackerDashboard: React.FC<TrackerDashboardProps> = ({ onOpenWorkspace }) => {
+export const TrackerDashboard: React.FC<TrackerDashboardProps> = ({
+  onOpenWorkspace,
+  onStatusChanged,
+}) => {
   const [apps, setApps] = useState<ApplicationListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -105,6 +109,7 @@ export const TrackerDashboard: React.FC<TrackerDashboardProps> = ({ onOpenWorksp
             : a
         )
       )
+      onStatusChanged?.()
     } catch (err: any) {
       setError(err.message || 'Failed to update status')
     }
@@ -127,6 +132,7 @@ export const TrackerDashboard: React.FC<TrackerDashboardProps> = ({ onOpenWorksp
     try {
       await deleteApplication(appId)
       setApps((prev) => prev.filter((a) => a.id !== appId))
+      onStatusChanged?.()
     } catch (err: any) {
       setError(err.message || 'Failed to remove application')
     }

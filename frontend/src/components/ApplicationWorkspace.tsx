@@ -49,8 +49,21 @@ interface ApplicationWorkspaceProps {
   initialSubjectRefs: string[]
   candidateName?: string
   candidateEmail?: string
+  activeProfileId?: string
+  availableLanguages?: string[]
+  baselineUrlPrefix?: string
   onBack: () => void
   onStatusChanged: () => void
+}
+
+function safeHttpUrl(raw?: string | null): string | null {
+  if (!raw) return null
+  try {
+    const parsed = new URL(raw)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.toString() : null
+  } catch {
+    return null
+  }
 }
 
 export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
@@ -58,6 +71,9 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
   initialSubjectRefs,
   candidateName,
   candidateEmail,
+  activeProfileId = 'local-default',
+  availableLanguages = [],
+  baselineUrlPrefix,
   onBack,
   onStatusChanged,
 }) => {
@@ -90,9 +106,12 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
   const resolvedCandidateName = (candidateName || '').trim() || 'Candidate'
   const safeCandidateSlug = resolvedCandidateName.replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '') || 'Candidate'
 
+  const senderStorageKey = `pfe_sender_email_${activeProfileId}`
+  const diffStorageKey = `pfe_diff_cache_${activeProfileId}_${listing.id}`
+
   // Sender Google Account (authuser)
   const [senderEmail, setSenderEmail] = useState<string>(() => {
-    return localStorage.getItem('pfe_sender_email') || candidateEmail || ''
+    return localStorage.getItem(senderStorageKey) || candidateEmail || ''
   })
 
   useEffect(() => {
@@ -175,7 +194,7 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
 
   const [diffCache, setDiffCache] = useState<Record<string, StagedCVDiff>>(() => {
     try {
-      const raw = localStorage.getItem(`pfe_diff_cache_${listing.id}`)
+      const raw = localStorage.getItem(diffStorageKey)
       return raw ? JSON.parse(raw) : {}
     } catch {
       return {}
@@ -186,7 +205,7 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
     setDiffCache((prev) => {
       const next = { ...prev, [key]: diff }
       try {
-        localStorage.setItem(`pfe_diff_cache_${listing.id}`, JSON.stringify(next))
+        localStorage.setItem(diffStorageKey, JSON.stringify(next))
       } catch {}
       return next
     })
@@ -206,7 +225,7 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
   // Save sender email preference
   const handleSenderEmailChange = (val: string) => {
     setSenderEmail(val)
-    localStorage.setItem('pfe_sender_email', val.trim())
+    localStorage.setItem(senderStorageKey, val.trim())
   }
 
   // Load existing application or user documents
@@ -374,11 +393,20 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
     }
   }
 
-  const handleRegenerate = async (target: 'email' | 'cover_letter' | 'all') => {
+  const handleRegenerate = async (
+    target: 'email' | 'cover_letter' | 'all',
+    overrides?: { include_cover_letter?: boolean; language?: 'fr' | 'en'; delivery_mode?: 'combined_email' | 'split_emails' | 'external_form' }
+  ) => {
     if (!app) return
     try {
       setRegenerating(true)
       setError(null)
+      await saveApplicationEdits(app.id, {
+        selected_subject_refs: selectedSubjects,
+        language: overrides?.language ?? language,
+        delivery_mode: overrides?.delivery_mode ?? deliveryMode,
+        include_cover_letter: overrides?.include_cover_letter ?? includeCoverLetter,
+      })
       const res = await regenerateApplication(app.id, {
         user_instruction: regenInstruction || undefined,
         target,
@@ -419,10 +447,14 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
     try {
       setLoadingDiff(true)
       setError(null)
-      // Save current selected topics and language first
+      // Save current selected topics and compatible CV language first
+      const cvLang =
+        availableLanguages.length > 0 && !availableLanguages.includes(language)
+          ? (availableLanguages[0] as 'fr' | 'en')
+          : language
       await saveApplicationEdits(app.id, {
         selected_subject_refs: selectedSubjects,
-        language,
+        language: cvLang,
       })
       const res = await generateCVDiff(app.id)
       setStagedDiff(res.diff)
@@ -775,9 +807,10 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
                   type="checkbox"
                   checked={includeCoverLetter}
                   onChange={(e) => {
-                    setIncludeCoverLetter(e.target.checked)
-                    if (e.target.checked && !coverLetterText) {
-                      handleRegenerate('cover_letter')
+                    const checked = e.target.checked
+                    setIncludeCoverLetter(checked)
+                    if (checked && !coverLetterText) {
+                      handleRegenerate('cover_letter', { include_cover_letter: true })
                     }
                   }}
                   className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3 h-3 cursor-pointer"
@@ -1213,6 +1246,23 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
             </div>
           </div>
 
+          {/* Saved Package Quick Download after reload */}
+          {!prepareResult && app && app.output_dir_key && (
+            <div className="bg-emerald-50/60 rounded-2xl border border-emerald-200 p-4 flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 font-semibold text-emerald-800">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Last Compiled Package</span>
+              </div>
+              <a
+                href={getApplicationZipUrl(app.id)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px]"
+              >
+                <Download className="w-3 h-3" />
+                <span>Download ZIP</span>
+              </a>
+            </div>
+          )}
+
           {/* Package Preparation Summary */}
           {prepareResult && app && (
             <div className="bg-emerald-50/70 rounded-2xl border border-emerald-300 p-4 space-y-3 text-xs text-emerald-900 animate-in fade-in">
@@ -1280,9 +1330,9 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
                   </a>
                 )}
 
-                {prepareResult.external_url && (
+                {safeHttpUrl(prepareResult.external_url) && (
                   <a
-                    href={prepareResult.external_url}
+                    href={safeHttpUrl(prepareResult.external_url)!}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 font-bold text-violet-700 hover:underline text-xs block"
@@ -1302,6 +1352,7 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
         <StagedCVDiffModal
           applicationId={app.id}
           diff={stagedDiff}
+          baselineUrlPrefix={baselineUrlPrefix}
           selectedSubjects={selectedSubjects}
           onClose={() => setShowDiffModal(false)}
           onConfirmed={(confirmedDiff) => {
@@ -1309,7 +1360,12 @@ export const ApplicationWorkspace: React.FC<ApplicationWorkspaceProps> = ({
             setStagedDiff(confirmedDiff)
             const currentKey = getDiffCacheKey(language, selectedSubjects)
             updateDiffCache(currentKey, confirmedDiff)
-            setApp({ ...app, cv_diff_confirmed: true, cv_staged_diff: confirmedDiff, status: 'drafted' })
+            setApp({
+              ...app,
+              cv_diff_confirmed: true,
+              cv_staged_diff: confirmedDiff,
+              status: app.status === 'new' ? 'drafted' : app.status,
+            })
             setSuccessMsg('Tailored CV locked to 1-page layout!')
             setTimeout(() => setSuccessMsg(null), 3000)
             onStatusChanged()

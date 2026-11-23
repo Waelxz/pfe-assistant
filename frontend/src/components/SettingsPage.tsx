@@ -115,6 +115,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshConfig }) =
   const handleSelectPreset = (key: string) => {
     setPreset(key)
     setTestResult(null)
+    if (settings && key !== settings.llm_provider_preset) {
+      setApiKey('')
+    } else if (settings?.api_key_masked) {
+      setApiKey(settings.api_key_masked)
+    }
     const p: ProviderPreset | undefined = settings?.presets?.[key]
     if (!p) return
     setProvider(p.llm_provider)
@@ -253,7 +258,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshConfig }) =
           {preset !== 'ollama' && (
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-700 block">
-                API Key {settings?.api_key_configured && <span className="text-emerald-600 font-normal">(configured)</span>}
+                API Key{' '}
+                {settings?.api_key_configured && preset === settings.llm_provider_preset && (
+                  <span className="text-emerald-600 font-normal">(configured)</span>
+                )}
               </label>
               <div className="relative">
                 <input
@@ -296,10 +304,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onRefreshConfig }) =
               <label className="text-xs font-semibold text-slate-700 block">Primary Model</label>
               <input
                 type="text"
-                list="gemini-model-suggestions"
+                list={preset === 'gemini' ? 'gemini-model-suggestions' : undefined}
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="gemini-3.5-flash"
+                placeholder={preset === 'gemini' ? 'gemini-3.5-flash' : 'model-name'}
                 className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:ring-1 focus:ring-indigo-500"
               />
             </div>

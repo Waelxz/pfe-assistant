@@ -14,10 +14,12 @@ STATIC_DIR = ROOT / "backend" / "app" / "static"
 
 
 def main() -> None:
-    if not (DIST_DIR / "index.html").exists():
+    skip_build = "--skip-build" in sys.argv
+    if not skip_build or not (DIST_DIR / "index.html").exists():
         print("Building frontend production bundle...")
         npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
-        subprocess.run([npm_cmd, "ci"], cwd=str(FRONTEND_DIR), check=True)
+        if not (FRONTEND_DIR / "node_modules").exists():
+            subprocess.run([npm_cmd, "ci"], cwd=str(FRONTEND_DIR), check=True)
         subprocess.run([npm_cmd, "run", "build"], cwd=str(FRONTEND_DIR), check=True)
 
     if STATIC_DIR.exists():

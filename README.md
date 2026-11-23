@@ -26,7 +26,7 @@ No servers, no subscriptions, and your CV & API keys never leave your computer.
 
 ### Option 1: Install as a Python CLI (`pipx` / `pip`)
 
-Requires **Python 3.11+** (no Node.js, no LaTeX, no Chrome required).
+Requires **Python 3.12+** (no Node.js, no LaTeX, no Chrome required).
 
 ```bash
 pip install pfe-assistant
@@ -47,7 +47,7 @@ Your browser opens automatically on `http://127.0.0.1:8000`. User data is stored
 
 ### Option 2: Run from Git Clone (`start.bat` / `start.sh`)
 
-Requires **Python 3.11+** and **Node.js 20+** (only on first run to build the frontend bundle).
+Requires **Python 3.12+** and **Node.js 20+** (only on first run to build the frontend bundle).
 
 - **Windows**: Double-click `start.bat` (or run `.\start.bat` in PowerShell)
 - **macOS / Linux**:
@@ -97,4 +97,4 @@ python -m pytest backend/tests/ -v
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/Waelxz/pfe-assistant/blob/main/LICENSE)

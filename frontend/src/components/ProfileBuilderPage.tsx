@@ -98,6 +98,7 @@ export const ProfileBuilderPage: React.FC<ProfileBuilderPageProps> = ({
   const [importing, setImporting] = useState(false)
   const [rescoring, setRescoring] = useState(false)
   const [showSampleConfirm, setShowSampleConfirm] = useState(false)
+  const [previewImgErr, setPreviewImgErr] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
   const [isDirty, setIsDirty] = useState(false)
 
@@ -142,15 +143,17 @@ export const ProfileBuilderPage: React.FC<ProfileBuilderPageProps> = ({
       setCurrentProfile(existing || createBlankProfile(lang, other))
       const urlPrefix = data.baseline_url_prefix || '/data/baseline'
       const m = lang === 'fr' ? data.metrics.fr : data.metrics.en
+      const cacheBust = `?t=${Date.now()}`
       if (m && m.valid !== false) {
         setActiveMetrics(m)
-        setPreviewPngUrl(m.png_url || `${urlPrefix}/baseline_CV_${lang.toUpperCase()}.png`)
-        setPreviewPdfUrl(m.pdf_url || `${urlPrefix}/baseline_CV_${lang.toUpperCase()}.pdf`)
+        setPreviewPngUrl(`${m.png_url || `${urlPrefix}/baseline_CV_${lang.toUpperCase()}.png`}${cacheBust}`)
+        setPreviewPdfUrl(`${m.pdf_url || `${urlPrefix}/baseline_CV_${lang.toUpperCase()}.pdf`}${cacheBust}`)
       } else {
         setActiveMetrics(m || null)
         setPreviewPngUrl('')
         setPreviewPdfUrl('')
       }
+      setPreviewImgErr(false)
       setIsDirty(false)
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Failed to load profile' })
@@ -163,24 +166,40 @@ export const ProfileBuilderPage: React.FC<ProfileBuilderPageProps> = ({
     loadProfile()
   }, [config?.active_profile_id])
 
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [isDirty])
+
   // Switch language tab
   const handleSwitchLang = (newLang: 'fr' | 'en') => {
     if (newLang === activeLang || !profileData) return
+    if (isDirty && !window.confirm('Discard unsaved edits on this CV tab before switching languages?')) {
+      return
+    }
     setActiveLang(newLang)
     const existing = newLang === 'fr' ? profileData.fr : profileData.en
     const other = newLang === 'fr' ? profileData.en : profileData.fr
     setCurrentProfile(existing || createBlankProfile(newLang, other))
-    const urlPrefix = profileData.baseline_url_prefix || '/data/baseline'
+    const urlPrefix = profileData.baseline_url_prefix || ''
     const m = newLang === 'fr' ? profileData.metrics.fr : profileData.metrics.en
+    const cacheBust = `?t=${Date.now()}`
     if (m && m.valid !== false) {
       setActiveMetrics(m)
-      setPreviewPngUrl(m.png_url || `${urlPrefix}/baseline_CV_${newLang.toUpperCase()}.png`)
-      setPreviewPdfUrl(m.pdf_url || `${urlPrefix}/baseline_CV_${newLang.toUpperCase()}.pdf`)
+      setPreviewPngUrl(`${m.png_url || `${urlPrefix}/baseline_CV_${newLang.toUpperCase()}.png`}${cacheBust}`)
+      setPreviewPdfUrl(`${m.pdf_url || `${urlPrefix}/baseline_CV_${newLang.toUpperCase()}.pdf`}${cacheBust}`)
     } else {
       setActiveMetrics(m || null)
       setPreviewPngUrl('')
       setPreviewPdfUrl('')
     }
+    setPreviewImgErr(false)
     if (!existing && other) {
       setMessage({
         type: 'info',
@@ -403,8 +422,18 @@ export const ProfileBuilderPage: React.FC<ProfileBuilderPageProps> = ({
         type: 'success',
         text: `Extracted CV into structured profile! Detected language: ${res.detected_language.toUpperCase()}. Review fields and click Save.`,
       })
-      // Trigger draft preview
-      await previewProfileDraft(res.detected_language, res.profile)
+      // Trigger draft preview and display it immediately
+      const previewRes = await previewProfileDraft(res.detected_language, res.profile)
+      setActiveMetrics({
+        page_count: previewRes.page_count ?? 1,
+        last_y1_pt: previewRes.last_y1_pt ?? 0,
+        valid: previewRes.valid_1_page,
+        pdf_url: previewRes.pdf_url,
+        png_url: previewRes.png_url,
+      })
+      setPreviewPngUrl(`${previewRes.png_url}?t=${Date.now()}`)
+      setPreviewPdfUrl(`${previewRes.pdf_url}?t=${Date.now()}`)
+      setPreviewImgErr(false)
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'PDF extraction failed' })
     } finally {
@@ -1620,14 +1649,12 @@ export const ProfileBuilderPage: React.FC<ProfileBuilderPageProps> = ({
 
             {/* Rendered CV Image Card */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden group relative">
-              {previewPngUrl ? (
+              {previewPngUrl && !previewImgErr ? (
                 <img
                   src={previewPngUrl}
                   alt={`Rendered CV ${activeLang.toUpperCase()}`}
                   className="w-full h-auto object-contain block"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
+                  onError={() => setPreviewImgErr(true)}
                 />
               ) : (
                 <div className="py-24 text-center text-slate-400 text-xs">

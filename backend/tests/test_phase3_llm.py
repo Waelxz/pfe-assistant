@@ -65,7 +65,7 @@ def test_schema_contracts():
         subject_ref="PFE-01",
         score=92,
         compatibility_tier="high",
-        why_match="Wael's extensive experience with LLM agents and FastAPI fits directly.",
+        why_match="Candidate's extensive experience with LLM agents and FastAPI fits directly.",
         matched_skills=["Python", "FastAPI"],
         missing_gaps=["LangChain"],
     )

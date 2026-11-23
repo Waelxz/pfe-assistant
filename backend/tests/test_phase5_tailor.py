@@ -81,7 +81,7 @@ def test_apply_staged_cv_diff_1_page_enforcement():
         ),
         summary_suggestion=SummarySuggestion(
             original="old summary",
-            proposed="2nd-year Master's student at IHEC Carthage specialized in Deep Learning, PyTorch, CNN and RAG systems.",
+            proposed="2nd-year Master's student at Example University specialized in Deep Learning, PyTorch, CNN and RAG systems.",
             reason="Emphasize ML",
             accepted=True,
         ),
@@ -142,7 +142,7 @@ def test_cv_diff_auto_fit_tiers():
         language="en",
         summary_suggestion=SummarySuggestion(
             original="old summary",
-            proposed="Master's student in Big Data Analytics & E-Commerce at IHEC Carthage with proven experience building production AI agents, distributed pipelines, and responsive web applications for enterprise clients.",
+            proposed="Master's student in Big Data Analytics & E-Commerce at Example University with proven experience building production AI agents, distributed pipelines, and responsive web applications for enterprise clients.",
             reason="Expanded summary",
             accepted=True,
             user_modified=True,
@@ -222,7 +222,7 @@ def test_cv_diff_and_confirm_endpoints():
             },
             "summary_suggestion": {
                 "original": "old summary",
-                "proposed": "Master's student in Big Data Analytics & E-Commerce at IHEC Carthage specialized in Deep Learning and Computer Vision.",
+                "proposed": "Master's student in Big Data Analytics & E-Commerce at Example University specialized in Deep Learning and Computer Vision.",
                 "reason": "Align with vision",
                 "accepted": True,
                 "unverified_keywords": [],
@@ -248,7 +248,7 @@ def test_cv_diff_and_confirm_endpoints():
         preset_diff = dict(diff_payload)
         preset_diff["summary_suggestion"] = {
             "original": "old summary",
-            "proposed": "Master's student in Big Data Analytics & E-Commerce at IHEC Carthage with experience building production AI agents, distributed pipelines, and responsive web applications for enterprise clients.",
+            "proposed": "Master's student in Big Data Analytics & E-Commerce at Example University with experience building production AI agents, distributed pipelines, and responsive web applications for enterprise clients.",
             "reason": "Moderate expansion",
             "accepted": True,
             "user_modified": True,
@@ -264,7 +264,8 @@ def test_cv_diff_and_confirm_endpoints():
         assert preset_data["cv_diff_confirmed"] is True
         assert preset_data["metrics"]["page_count"] == 1
 
-        # 4. Test massive unrecoverable overflow -> returns 422 with overflow detail
+        # 4. Test massive unrecoverable overflow (with LLM compression disabled) -> returns 422
+        from unittest.mock import patch
         massive_diff = dict(diff_payload)
         massive_diff["summary_suggestion"] = {
             "original": "old summary",
@@ -274,10 +275,11 @@ def test_cv_diff_and_confirm_endpoints():
             "user_modified": True,
             "unverified_keywords": [],
         }
-        massive_resp = client.put(
-            f"/api/applications/{app_id}/cv-confirm",
-            json={"diff": massive_diff},
-        )
+        with patch("backend.app.cv.tailor.auto_fit_cv_text_with_llm", side_effect=lambda d, **kw: d):
+            massive_resp = client.put(
+                f"/api/applications/{app_id}/cv-confirm",
+                json={"diff": massive_diff},
+            )
         assert massive_resp.status_code == 422
         assert "exceeded 1-page layout lock" in massive_resp.json()["detail"]
     finally:

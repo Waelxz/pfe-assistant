@@ -184,6 +184,12 @@ def update_runtime_settings(payload: dict):
     ):
         val = getattr(req, field_name)
         if val is not None:
+            if field_name == "active_profile_id":
+                from backend.app.cv.profiles import _resolve_profile_path
+                try:
+                    _resolve_profile_path(val)
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
             updates[field_name] = val
 
     # Allow clearing per-job overrides when explicitly passed as "" or null in payload
@@ -335,6 +341,8 @@ async def upload_custom_pfe_book(
 
     # Support both query and multipart form fields
     content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="PDF file exceeds 50 MB limit.")
     if not content or not content.startswith(b"%PDF-"):
         raise HTTPException(
             status_code=400,
@@ -422,15 +430,18 @@ async def upload_custom_pfe_book(
 
     extraction_error: str | None = None
     if extract_now:
+        def _process_in_thread(lid: int, uid: str) -> None:
+            from backend.app.database import SessionLocal
+            tdb = SessionLocal()
+            try:
+                tlisting = tdb.query(Listing).filter(Listing.id == lid).first()
+                if tlisting:
+                    process_listing(db=tdb, listing=tlisting, force_extract=False, force_match=False, user_id=uid)
+            finally:
+                tdb.close()
+
         try:
-            await asyncio.to_thread(
-                process_listing,
-                db=db,
-                listing=target_listing,
-                force_extract=False,
-                force_match=False,
-                user_id=user_id,
-            )
+            await asyncio.to_thread(_process_in_thread, target_listing.id, user_id)
             db.refresh(target_listing)
         except Exception as exc:
             extraction_error = str(exc)
@@ -768,8 +779,13 @@ async def _run_sync_task(extract_listings: bool = False):
     db = SessionLocal()
     sync_service = SyncService()
 
+    had_error = False
+
     def on_progress(event: SyncProgressEvent):
+        nonlocal had_error
         data = event.model_dump()
+        if event.step == "error":
+            had_error = True
         for q in list(_sync_queues):
             try:
                 q.put_nowait(data)
@@ -777,13 +793,22 @@ async def _run_sync_task(extract_listings: bool = False):
                 pass
 
     try:
-        await sync_service.run_sync(db, extract_listings=extract_listings, on_progress=on_progress)
+        summary = await sync_service.run_sync(db, extract_listings=extract_listings, on_progress=on_progress)
+        if getattr(summary, "errors", None):
+            had_error = True
+    except Exception as exc:
+        had_error = True
+        for q in list(_sync_queues):
+            try:
+                q.put_nowait({"step": "error", "progress_pct": 100, "message": f"Sync failed: {exc}"})
+            except Exception:
+                pass
     finally:
         db.close()
         # Send terminal signal
         for q in list(_sync_queues):
             try:
-                q.put_nowait({"step": "done"})
+                q.put_nowait({"step": "done", "progress_pct": 100, "had_error": had_error})
             except Exception:
                 pass
 
@@ -1456,6 +1481,7 @@ def preview_cv_diff_endpoint(
     return {
         "status": "success",
         "application_id": app_record.id,
+        "all_unverified_keywords": computed_diff.all_unverified_keywords,
         "metrics": render_res["metrics"],
         "layout_preset_applied": render_res.get("layout_preset_applied", 0),
         "auto_compressed": render_res.get("auto_compressed", False),
@@ -1781,12 +1807,32 @@ async def upload_user_document(
     user_id: str = Depends(get_current_user_id),
 ):
     """Uploads a reusable document file to local storage and saves record."""
+    import re
+    import uuid
     from backend.app.storage import get_storage
 
     storage = get_storage()
     content = await file.read()
-    orig_name = file.filename or f"{doc_type}.pdf"
-    storage_key = storage.save_document(f"{doc_type}_{orig_name}", content)
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Document exceeds 25 MB limit.")
+
+    orig_name = Path(file.filename or f"{doc_type}.pdf").name
+    ext = Path(orig_name).suffix.lower()
+    allowed_exts = {".pdf", ".png", ".jpg", ".jpeg"}
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=400, detail="Only PDF, PNG, and JPG documents are allowed.")
+    if ext == ".pdf" and not content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="File has .pdf extension but is not a valid PDF.")
+    if ext == ".png" and not content.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(status_code=400, detail="File has .png extension but is not a valid PNG.")
+    if ext in (".jpg", ".jpeg") and not content.startswith(b"\xff\xd8"):
+        raise HTTPException(status_code=400, detail="File has .jpg extension but is not a valid JPEG.")
+
+    safe_uid = re.sub(r"[^\w\-]", "_", user_id).strip("_") or "default"
+    safe_orig = re.sub(r"[^\w\-.]", "_", orig_name)
+    storage_key = storage.save_document(f"{safe_uid}_{uuid.uuid4().hex[:8]}_{doc_type}_{safe_orig}", content)
 
     doc = UserDocument(
         user_id=user_id,
@@ -1814,7 +1860,9 @@ def delete_user_document(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Deletes a reusable document record."""
+    """Deletes a reusable document record and removes its local file."""
+    from backend.app.storage import get_storage
+
     doc = (
         db.query(UserDocument)
         .filter(UserDocument.id == document_id, UserDocument.user_id == user_id)
@@ -1822,6 +1870,14 @@ def delete_user_document(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.storage_key:
+        try:
+            doc_path = get_storage().get_document_path(doc.storage_key)
+            if doc_path and doc_path.exists():
+                doc_path.unlink()
+        except Exception:
+            pass
 
     db.delete(doc)
     db.commit()
@@ -1860,16 +1916,23 @@ def switch_active_profile(profile_id: str):
     try:
         prof = activate_profile(profile_id)
         return {"status": "success", "profile": prof}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.delete("/api/profiles/{profile_id}")
-def remove_profile(profile_id: str):
-    """Delete a candidate profile directory."""
+def remove_profile(profile_id: str, db: Session = Depends(get_db)):
+    """Delete a candidate profile directory and its SQLite records."""
     from backend.app.cv.profiles import delete_profile
     try:
         delete_profile(profile_id)
+        db.query(Application).filter(Application.user_id == profile_id).delete(synchronize_session=False)
+        db.query(SubjectMatch).filter(SubjectMatch.user_id == profile_id).delete(synchronize_session=False)
+        db.query(SubjectComparison).filter(SubjectComparison.user_id == profile_id).delete(synchronize_session=False)
+        db.query(UserDocument).filter(UserDocument.user_id == profile_id).delete(synchronize_session=False)
+        db.commit()
         return {"status": "success", "deleted_id": profile_id}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1998,7 +2061,7 @@ def update_profile(
         get_active_profile_id,
         get_baseline_url_prefix,
     )
-    from backend.app.cv.render import render_baseline_cv, get_baseline_filenames, MAX_BOTTOM_Y1_PT
+    from backend.app.cv.render import render_baseline_cv, get_baseline_filenames, MAX_BOTTOM_Y1_PT, PageOverflowError
     from backend.app.llm.match import get_profile_hash
 
     lang_code = lang.lower()
@@ -2007,8 +2070,13 @@ def update_profile(
     pid = get_active_profile_id()
     url_prefix = get_baseline_url_prefix(pid)
 
-    save_candidate_profile(profile, lang_code, profile_dir=pdir, auto_fit=auto_fit)
-    baseline_res = render_baseline_cv(lang_code, bdir, profile_dir=pdir)
+    try:
+        save_candidate_profile(profile, lang_code, profile_dir=pdir, auto_fit=auto_fit)
+        baseline_res = render_baseline_cv(lang_code, bdir, profile_dir=pdir)
+    except PageOverflowError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to compile/save profile: {e}")
 
     pdf_name, png_name = get_baseline_filenames(lang_code)
     return {
@@ -2096,6 +2164,8 @@ async def import_profile_from_pdf(
     from backend.app.llm.prompts.loader import load_job_prompt
 
     content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="CV PDF exceeds 50 MB limit.")
     if not content or not content.startswith(b"%PDF-"):
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid PDF.")
 
@@ -2133,6 +2203,10 @@ async def import_profile_from_pdf(
             "detected_language": response.detected_language,
             "profile": normalized_profile,
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"CV PDF import failed: {e}")
     finally:
         if tmp_pdf_path.exists():
             tmp_pdf_path.unlink()
@@ -2168,13 +2242,16 @@ Return the optimized profile and a short list of concrete improvements applied.
 </task>
 """
 
-    res = generate_structured_content(
-        contents=user_prompt,
-        response_schema=ProfileOptimizeResponse,
-        model=active_model,
-        temperature=spec.temperature or 0.2,
-        system_instruction=spec.system_prompt,
-    )
+    try:
+        res = generate_structured_content(
+            contents=user_prompt,
+            response_schema=ProfileOptimizeResponse,
+            model=active_model,
+            temperature=spec.temperature or 0.2,
+            system_instruction=spec.system_prompt,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ATS optimization failed: {e}")
 
     optimized_profile = normalize_profile_for_ats(res.profile)
     optimized_profile.language = payload.lang
@@ -2225,31 +2302,34 @@ Respect 1-page character length budget.
 </task>
 """
 
-    res = generate_structured_content(
-        contents=user_prompt,
-        response_schema=ProfileTranslateResponse,
-        model=active_model,
-        temperature=spec.temperature or 0.1,
-        system_instruction=spec.system_prompt,
-    )
+    try:
+        res = generate_structured_content(
+            contents=user_prompt,
+            response_schema=ProfileTranslateResponse,
+            model=active_model,
+            temperature=spec.temperature or 0.1,
+            system_instruction=spec.system_prompt,
+        )
 
-    translated_profile = normalize_profile_for_ats(res.profile)
-    translated_profile.language = payload.target_lang
+        translated_profile = normalize_profile_for_ats(res.profile)
+        translated_profile.language = payload.target_lang
 
-    metrics = None
-    if payload.auto_save:
-        pdir = get_active_profile_dir()
-        bdir = get_active_baseline_dir()
-        url_prefix = get_baseline_url_prefix(get_active_profile_id())
-        save_candidate_profile(translated_profile, payload.target_lang, profile_dir=pdir, auto_fit=True)
-        base_res = render_baseline_cv(payload.target_lang, bdir, profile_dir=pdir)
-        pdf_name, png_name = get_baseline_filenames(payload.target_lang)
-        metrics = {
-            "page_count": base_res["page_count"],
-            "last_y1_pt": base_res["last_y1_pt"],
-            "pdf_url": f"{url_prefix}/{pdf_name}",
-            "png_url": f"{url_prefix}/{png_name}",
-        }
+        metrics = None
+        if payload.auto_save:
+            pdir = get_active_profile_dir()
+            bdir = get_active_baseline_dir()
+            url_prefix = get_baseline_url_prefix(get_active_profile_id())
+            save_candidate_profile(translated_profile, payload.target_lang, profile_dir=pdir, auto_fit=True)
+            base_res = render_baseline_cv(payload.target_lang, bdir, profile_dir=pdir)
+            pdf_name, png_name = get_baseline_filenames(payload.target_lang)
+            metrics = {
+                "page_count": base_res["page_count"],
+                "last_y1_pt": base_res["last_y1_pt"],
+                "pdf_url": f"{url_prefix}/{pdf_name}",
+                "png_url": f"{url_prefix}/{png_name}",
+            }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Profile translation failed: {e}")
 
     return {
         "status": "success",
@@ -2271,7 +2351,7 @@ def rescore_all_listings(
     curr_hash = get_profile_hash()
     listings = (
         db.query(Listing)
-        .filter(Listing.extraction != None)
+        .filter(Listing.extractions.any())
         .all()
     )
 

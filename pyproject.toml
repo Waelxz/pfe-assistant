@@ -9,7 +9,7 @@ description = "Local-first BYOK assistant for ranking PFE Books, building ATS-re
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [
     { name = "Wael Dridi" }
 ]
@@ -20,19 +20,18 @@ classifiers = [
     "Framework :: FastAPI",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "rendercv[full]",
+    "rendercv[full]>=2.6,<3.0",
+    "typst>=0.14.0",
     "pymupdf",
     "pyyaml",
     "pydantic>=2.0",
     "fastapi",
     "uvicorn[standard]",
     "sqlalchemy>=2.0",
-    "alembic",
     "httpx",
     "beautifulsoup4",
     "lxml",
@@ -40,6 +39,11 @@ dependencies = [
     "python-dotenv",
     "python-multipart",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Waelxz/pfe-assistant"
+Repository = "https://github.com/Waelxz/pfe-assistant"
+Issues = "https://github.com/Waelxz/pfe-assistant/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -50,8 +54,15 @@ dev = [
 [project.scripts]
 pfe-assistant = "backend.app.cli:main"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
-include = ["backend*"]
+include = ["backend", "backend.app*"]
+exclude = ["backend.tests*", "backend.scripts*"]
+
+[tool.setuptools.exclude-package-data]
+"backend" = ["tests/*", "scripts/*"]
 
 [tool.setuptools.package-data]
 "backend.app" = [

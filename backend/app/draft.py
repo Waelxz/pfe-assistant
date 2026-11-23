@@ -232,7 +232,8 @@ def format_file_name(
         name = name.replace("{doc_type}", doc_type).replace("{DOC_TYPE}", doc_type.upper())
         if not name.lower().endswith(".pdf"):
             name = f"{name}.pdf"
-        return name
+        safe_name = re.sub(r"[^\w\-.]", "_", Path(name).name).lstrip(".")
+        return safe_name or f"{doc_type}_{name_clean}.pdf"
 
     # Standard naming
     if doc_type.lower() == "cv":
@@ -243,6 +244,14 @@ def format_file_name(
     else:
         clean_type = re.sub(r"[^\w\-]", "_", doc_type).strip("_")
         return f"{clean_type}_{name_clean}.pdf"
+
+
+def _escape_typst(text: str) -> str:
+    """Escape Typst markup characters inside user/LLM text."""
+    out = text or ""
+    for ch in ("\\", "#", "$", "@", "<", ">", "[", "]", "*", "_"):
+        out = out.replace(ch, f"\\{ch}")
+    return out
 
 
 def compile_cover_letter_typst(
@@ -259,39 +268,36 @@ def compile_cover_letter_typst(
 ) -> str:
     """Generates clean Typst markup for a 1-page cover letter matching CV styling."""
     facts = get_candidate_facts_for_lang(language)
-    safe_email_label = candidate_email.replace("@", "\\@")
-    # Escape Typst syntax characters inside user/LLM body text
-    safe_body = (
-        body_text.replace("@", "\\@")
-        .replace("#", "\\#")
-        .replace("$", "\\$")
-    )
+    safe_email_label = _escape_typst(candidate_email)
+    safe_body = _escape_typst(body_text)
+    safe_company = _escape_typst(company_name)
+    safe_cand_name = _escape_typst(candidate_name)
     is_fr = language.lower() == "fr"
 
-    degree_text = candidate_degree if candidate_degree is not None else facts.get("degree", "")
-    institution_text = candidate_institution if candidate_institution is not None else facts.get("institution", "")
+    degree_text = _escape_typst(candidate_degree if candidate_degree is not None else facts.get("degree", ""))
+    institution_text = _escape_typst(candidate_institution if candidate_institution is not None else facts.get("institution", ""))
     loc_raw = candidate_location if candidate_location is not None else facts.get("location", "")
-    city = loc_raw.split(",")[0].strip() if loc_raw else ""
+    city = _escape_typst(loc_raw.split(",")[0].strip()) if loc_raw else ""
 
     date_line = (
-        f"{city}, le {date_str}" if (is_fr and city)
-        else (f"Le {date_str}" if is_fr else (f"{city}, {date_str}" if city else date_str))
+        f"{city}, le {_escape_typst(date_str)}" if (is_fr and city)
+        else (f"Le {_escape_typst(date_str)}" if is_fr else (f"{city}, {_escape_typst(date_str)}" if city else _escape_typst(date_str)))
     )
     recipient_header = (
-        f"*À l'attention de l'équipe de recrutement* \\\\\n    *{company_name}* \\\\\n    #v(0.5em)\n    {date_line}"
+        f"*À l'attention de l'équipe de recrutement* \\\\\n    *{safe_company}* \\\\\n    #v(0.5em)\n    {date_line}"
         if is_fr
-        else f"*To the Attention of the Hiring Team* \\\\\n    *{company_name}* \\\\\n    #v(0.5em)\n    {date_line}"
+        else f"*To the Attention of the Hiring Team* \\\\\n    *{safe_company}* \\\\\n    #v(0.5em)\n    {date_line}"
     )
 
-    left_lines = [f"* {candidate_name} *"]
+    left_lines = [f"*{safe_cand_name}*"]
     if degree_text:
         left_lines.append(degree_text)
     if institution_text:
         left_lines.append(institution_text)
     if candidate_email:
-        left_lines.append(f'#link("mailto:{candidate_email}")[{safe_email_label}]')
+        left_lines.append(f'#link("mailto:{candidate_email.replace(chr(34), "")}")[{safe_email_label}]')
     if candidate_phone:
-        left_lines.append(candidate_phone)
+        left_lines.append(_escape_typst(candidate_phone))
     left_block = " \\\n    ".join(left_lines)
 
     typst_code = f"""
@@ -300,7 +306,7 @@ def compile_cover_letter_typst(
   margin: (x: 2cm, y: 2.2cm),
 )
 #set text(
-  font: "Liberation Sans",
+  font: ("Liberation Sans", "Helvetica Neue", "Arial", "DejaVu Sans"),
   size: 10.5pt,
   lang: "{"fr" if is_fr else "en"}",
 )
@@ -555,7 +561,11 @@ def prepare_application_package(
     baseline_dir = get_active_baseline_dir()
 
     storage_adapter = storage or get_storage()
-    app: Application | None = db.query(Application).filter(Application.id == application_id).first()
+    app: Application | None = (
+        db.query(Application)
+        .filter(Application.id == application_id, Application.user_id == user_id)
+        .first()
+    )
     if not app:
         raise ValueError(f"Application {application_id} not found")
 
@@ -565,7 +575,8 @@ def prepare_application_package(
 
     today_str = date.today().strftime("%Y-%m-%d")
     clean_company = re.sub(r"[^\w\-]", "_", listing.company_name).strip("_")
-    folder_slug = f"{clean_company}_{today_str}"
+    safe_uid = re.sub(r"[^\w\-]", "_", user_id).strip("_") or "default"
+    folder_slug = f"{safe_uid}/{clean_company}_{today_str}_app{app.id}"
     target_dir = storage_adapter.get_application_dir(folder_slug)
 
     # 1. Determine subject ref

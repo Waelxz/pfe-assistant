@@ -42,6 +42,16 @@ interface ListingDetailDrawerProps {
   onListingUpdated?: () => void
 }
 
+function safeHttpUrl(raw?: string | null): string | null {
+  if (!raw) return null
+  try {
+    const parsed = new URL(raw)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.toString() : null
+  } catch {
+    return null
+  }
+}
+
 export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
   listing,
   initialSelectedRefs,
@@ -241,9 +251,9 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                   </>
                 )}
                 <span>•</span>
-                {listing.post_url ? (
+                {safeHttpUrl(listing.post_url) ? (
                   <a
-                    href={listing.post_url}
+                    href={safeHttpUrl(listing.post_url)!}
                     target="_blank"
                     rel="noreferrer"
                     className="text-indigo-600 hover:underline flex items-center gap-1"
@@ -471,11 +481,11 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                       </div>
                     )}
 
-                    {rules.external_url && (
+                    {safeHttpUrl(rules.external_url) && (
                       <div className="sm:col-span-2">
                         <span className="text-slate-500">External Form:</span>{' '}
                         <a
-                          href={rules.external_url}
+                          href={safeHttpUrl(rules.external_url)!}
                           target="_blank"
                           rel="noreferrer"
                           className="text-indigo-600 hover:underline inline-flex items-center gap-1 break-all"
@@ -775,9 +785,9 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                                 <span>{isPinnedCompare ? 'Pinned' : 'Compare'}</span>
                               </button>
                             )}
-                            {s.apply_url && (
+                            {safeHttpUrl(s.apply_url) && (
                               <a
-                                href={s.apply_url}
+                                href={safeHttpUrl(s.apply_url)!}
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(e) => e.stopPropagation()}

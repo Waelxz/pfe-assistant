@@ -93,38 +93,70 @@ def prepare_pdf_input(pdf_path: Path, cache_key: str | None = None) -> Any:
     # Non-Gemini / OpenAI-compatible fallback via PyMuPDF
     import pymupdf
 
-    doc = pymupdf.open(pdf_path)
-    page_texts: list[str] = []
-    total_text_len = 0
+    with pymupdf.open(pdf_path) as doc:
+        page_texts: list[str] = []
+        total_text_len = 0
 
-    for page_idx in range(len(doc)):
-        page = doc[page_idx]
-        txt = page.get_text() or ""
-        total_text_len += len(txt.strip())
-        page_texts.append(f"=== PAGE {page_idx + 1} ===\n{txt}")
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            txt = page.get_text() or ""
+            total_text_len += len(txt.strip())
+            page_texts.append(f"=== PAGE {page_idx + 1} ===\n{txt}")
 
-    # If document has adequate text, return page-delimited string
-    if total_text_len >= 100:
-        return "\n\n".join(page_texts)
+        # If document has adequate text, return page-delimited string (capped for smaller context windows)
+        if total_text_len >= 100:
+            joined = "\n\n".join(page_texts)
+            if len(joined) > 85_000:
+                joined = joined[:85_000] + "\n\n[Truncated after 85,000 characters]"
+            return joined
 
-    # Scanned brochure with low text: return base64 images (first 8 pages max)
-    image_parts: list[dict[str, Any]] = []
-    max_pages = min(len(doc), 8)
-    for p_idx in range(max_pages):
-        pix = doc[p_idx].get_pixmap(dpi=150)
-        img_bytes = pix.tobytes("jpeg")
-        b64_str = base64.b64encode(img_bytes).decode("utf-8")
-        image_parts.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64_str}"},
-            }
-        )
-    return image_parts
+        # Scanned brochure with low text: return base64 images (first 8 pages max)
+        image_parts: list[dict[str, Any]] = []
+        max_pages = min(len(doc), 8)
+        for p_idx in range(max_pages):
+            pix = doc[p_idx].get_pixmap(dpi=150)
+            img_bytes = pix.tobytes("jpeg")
+            b64_str = base64.b64encode(img_bytes).decode("utf-8")
+            image_parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64_str}"},
+                }
+            )
+        return image_parts
 
 
 def _backoff_seconds(attempt: int) -> float:
     return min(8.0, (1.5 * (2 ** attempt)) + random.uniform(0.15, 0.75))
+
+
+def _strip_json_fences(raw_text: str) -> str:
+    """Strip markdown ```json ... ``` wrappers returned by OpenAI-compatible models."""
+    cleaned = (raw_text or "").strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+    return cleaned
+
+
+def _extract_http_error_detail(resp: httpx.Response | None) -> str:
+    if resp is None:
+        return "Network error contacting LLM provider."
+    try:
+        err_json = resp.json()
+        if isinstance(err_json, dict):
+            err = err_json.get("error")
+            if isinstance(err, dict) and err.get("message"):
+                return str(err["message"])
+            if err_json.get("message"):
+                return str(err_json["message"])
+    except Exception:
+        pass
+    return (resp.text or f"HTTP {resp.status_code}")[:300]
 
 
 def _generate_openai_compatible(
@@ -139,7 +171,10 @@ def _generate_openai_compatible(
     """Calls an OpenAI-compatible API endpoint via httpx with structured schema decoding and fallback chain."""
     settings = get_settings()
     base_url = settings.llm_base_url.rstrip("/")
-    api_key = settings.llm_api_key or settings.gemini_api_key or "ollama"
+    is_local = settings.llm_provider_preset == "ollama" or "localhost" in base_url or "127.0.0.1" in base_url
+    api_key = settings.llm_api_key or ("ollama" if is_local else "")
+    if not api_key:
+        raise ValueError("Missing API key for configured LLM provider.")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -193,55 +228,67 @@ def _generate_openai_compatible(
     if temperature is not None:
         payload["temperature"] = temperature
 
-    client = httpx.Client(timeout=120.0)
-    current_payload = payload
-    json_mode_fallback = False
-    total_budget = max(max_retries, len(model_chain) * 2)
+    with httpx.Client(timeout=120.0) as client:
+        current_payload = payload
+        json_mode_fallback = False
+        total_budget = max(max_retries, len(model_chain) * 2)
+        last_raw = ""
 
-    for attempt in range(total_budget):
-        try:
-            current_payload["model"] = current_model
-            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=current_payload)
-            if resp.status_code == 400 and not json_mode_fallback:
-                # Provider might not support json_schema mode, try json_object fallback
-                logger.warning("Provider rejected json_schema; falling back to json_object format.")
-                json_mode_fallback = True
-                current_payload["response_format"] = {"type": "json_object"}
-                schema_hint = f"\nYou MUST output valid JSON strictly matching this JSON Schema:\n{json.dumps(schema_dict)}"
-                if current_payload["messages"] and current_payload["messages"][0]["role"] == "system":
-                    current_payload["messages"][0]["content"] += schema_hint
-                else:
-                    current_payload["messages"].insert(0, {"role": "system", "content": schema_hint})
-                continue
-
-            resp.raise_for_status()
-            res_data = resp.json()
-            raw_content = res_data["choices"][0]["message"]["content"]
-            parsed = response_schema.model_validate_json(raw_content)
-            return parsed, current_model
-
-        except (ValidationError, ValueError) as val_err:
-            if attempt < total_budget - 1:
-                logger.warning(f"Structured parse failed ({val_err}). Appending error and retrying...")
-                error_repair_msg = f"Your previous response failed validation: {val_err}. Please output strictly valid JSON matching the schema."
-                current_payload["messages"].append({"role": "user", "content": error_repair_msg})
-                continue
-            raise
-
-        except httpx.HTTPError as http_err:
-            status = getattr(getattr(http_err, "response", None), "status_code", None)
-            is_transient = status in (429, 500, 502, 503, 504)
-            if is_transient and attempt < total_budget - 1:
-                if model_idx + 1 < len(model_chain):
-                    model_idx += 1
-                    next_model = model_chain[model_idx]
-                    logger.warning(f"Provider HTTP {status} on {current_model}; switching to fallback {next_model}.")
-                    current_model = next_model
-                    time.sleep(0.4)
+        for attempt in range(total_budget):
+            try:
+                current_payload["model"] = current_model
+                resp = client.post(f"{base_url}/chat/completions", headers=headers, json=current_payload)
+                if resp.status_code == 400 and not json_mode_fallback:
+                    err_detail = _extract_http_error_detail(resp).lower()
+                    if "image" in err_detail or "vision" in err_detail or "multimodal" in err_detail:
+                        raise RuntimeError(
+                            "Scanned PDF requires a vision-capable model (e.g. Google Gemini) or a multimodal model."
+                        )
+                    # Provider might not support json_schema mode, try json_object fallback
+                    logger.warning("Provider rejected json_schema; falling back to json_object format.")
+                    json_mode_fallback = True
+                    current_payload["response_format"] = {"type": "json_object"}
+                    schema_hint = f"\nYou MUST output valid JSON strictly matching this JSON Schema:\n{json.dumps(schema_dict)}"
+                    if current_payload["messages"] and current_payload["messages"][0]["role"] == "system":
+                        current_payload["messages"][0]["content"] += schema_hint
+                    else:
+                        current_payload["messages"].insert(0, {"role": "system", "content": schema_hint})
                     continue
-                time.sleep(_backoff_seconds(attempt))
-                continue
-            raise
+
+                resp.raise_for_status()
+                res_data = resp.json()
+                raw_content = res_data["choices"][0]["message"].get("content") or ""
+                last_raw = raw_content
+                parsed = response_schema.model_validate_json(_strip_json_fences(raw_content))
+                return parsed, current_model
+
+            except (ValidationError, ValueError) as val_err:
+                if attempt < total_budget - 1:
+                    logger.warning(f"Structured parse failed ({val_err}). Appending error and retrying...")
+                    if last_raw:
+                        current_payload["messages"].append({"role": "assistant", "content": last_raw[:2000]})
+                    error_repair_msg = f"Your previous response failed validation: {val_err}. Output strictly valid JSON matching the schema without markdown fences."
+                    current_payload["messages"].append({"role": "user", "content": error_repair_msg})
+                    continue
+                raise
+
+            except httpx.HTTPError as http_err:
+                resp_obj = getattr(http_err, "response", None)
+                status = getattr(resp_obj, "status_code", None)
+                is_transient = status in (404, 429, 500, 502, 503, 504)
+                if is_transient and attempt < total_budget - 1:
+                    if model_idx + 1 < len(model_chain):
+                        model_idx += 1
+                        next_model = model_chain[model_idx]
+                        logger.warning(f"Provider HTTP {status} on {current_model}; switching to fallback {next_model}.")
+                        current_model = next_model
+                        time.sleep(0.4)
+                        continue
+                    if status != 404:
+                        time.sleep(_backoff_seconds(attempt))
+                        continue
+                detail = _extract_http_error_detail(resp_obj)
+                raise RuntimeError(f"LLM provider error ({status or 'connection'}): {detail}") from http_err
 
     raise RuntimeError(f"OpenAI-compatible request failed after {total_budget} attempts.")
 
@@ -260,7 +307,12 @@ def generate_structured_content(
 
     active_model = model or settings.llm_model or DEFAULT_MODEL
     fallback_chain = settings.get_fallback_models(active_model)
-    if not fallback_chain and FALLBACK_MODEL != active_model and not (settings.llm_fallback_model or "").strip():
+    if (
+        settings.llm_provider == "gemini"
+        and not fallback_chain
+        and FALLBACK_MODEL != active_model
+        and not (settings.llm_fallback_model or "").strip()
+    ):
         fallback_chain = [FALLBACK_MODEL]
     model_chain = [active_model] + fallback_chain
     _last_fallback_info = None
@@ -368,8 +420,11 @@ def test_llm_connection(
     """Run a tiny live connectivity check against the supplied or active LLM config."""
     settings = get_settings()
     eff_provider = (provider or settings.llm_provider or "gemini").lower()
-    eff_key = api_key if api_key is not None else (settings.llm_api_key or settings.gemini_api_key)
     eff_url = (base_url or settings.llm_base_url or "https://api.openai.com/v1").rstrip("/")
+    if eff_provider == "gemini":
+        eff_key = api_key if api_key is not None else (settings.llm_api_key or settings.gemini_api_key)
+    else:
+        eff_key = api_key if api_key is not None else settings.llm_api_key
     eff_model = model or settings.llm_model or DEFAULT_MODEL
 
     if eff_provider == "gemini":
@@ -388,22 +443,30 @@ def test_llm_connection(
             "reply": (resp.text or "OK").strip()[:40],
         }
 
+    is_local = "localhost" in eff_url or "127.0.0.1" in eff_url
+    if not eff_key and not is_local:
+        raise ValueError("Missing API key for configured LLM provider.")
+
     headers = {
         "Authorization": f"Bearer {eff_key or 'ollama'}",
         "Content-Type": "application/json",
     }
-    resp = httpx.post(
-        f"{eff_url}/chat/completions",
-        headers=headers,
-        json={
-            "model": eff_model,
-            "messages": [{"role": "user", "content": "Reply with OK"}],
-            "max_tokens": 8,
-            "temperature": 0.0,
-        },
-        timeout=25.0,
-    )
-    resp.raise_for_status()
+    try:
+        resp = httpx.post(
+            f"{eff_url}/chat/completions",
+            headers=headers,
+            json={
+                "model": eff_model,
+                "messages": [{"role": "user", "content": "Reply with OK"}],
+                "max_tokens": 8,
+                "temperature": 0.0,
+            },
+            timeout=25.0,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as http_err:
+        detail = _extract_http_error_detail(getattr(http_err, "response", None))
+        raise RuntimeError(f"Connection test failed: {detail}") from http_err
     data = resp.json()
     reply = data["choices"][0]["message"]["content"]
     return {

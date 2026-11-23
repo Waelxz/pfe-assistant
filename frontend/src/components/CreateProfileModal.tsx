@@ -11,9 +11,11 @@ import {
 } from 'lucide-react'
 import {
   createProfile,
+  deleteProfile,
   importProfilePdf,
   updateProfile,
   loadSampleProfile,
+  updateSettings,
 } from '../api'
 
 interface CreateProfileModalProps {
@@ -50,23 +52,33 @@ export const CreateProfileModal: React.FC<CreateProfileModalProps> = ({
 
     setSubmitting(true)
     setError(null)
+    let createdProfileId: string | null = null
 
     try {
-      setStatusText('Creating isolated profile...')
-      await createProfile(trimmed, true)
-
+      let imported: Awaited<ReturnType<typeof importProfilePdf>> | null = null
       if (startMode === 'pdf' && pdfFile) {
         setStatusText('Extracting CV with AI...')
-        const res = await importProfilePdf(pdfFile)
+        imported = await importProfilePdf(pdfFile)
+      }
+
+      setStatusText('Creating isolated profile...')
+      const created = await createProfile(trimmed, true)
+      createdProfileId = created.profile.id
+
+      if (imported) {
         setStatusText('Compiling 1-page CV...')
-        await updateProfile(res.detected_language, res.profile)
+        await updateProfile(imported.detected_language, imported.profile)
       } else if (startMode === 'sample') {
         setStatusText('Loading 1-page sample CV...')
         await loadSampleProfile('both')
       }
 
+      await updateSettings({ onboarding_completed: true }).catch(() => {})
       onCreated()
     } catch (err: any) {
+      if (createdProfileId) {
+        await deleteProfile(createdProfileId).catch(() => {})
+      }
       setError(err.message || 'Failed to create profile')
       setStatusText(null)
     } finally {

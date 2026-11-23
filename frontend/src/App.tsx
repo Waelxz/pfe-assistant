@@ -129,8 +129,8 @@ export function App() {
   const handleSwitchProfile = async (profileId: string) => {
     try {
       await activateProfile(profileId)
-      setWorkspaceListing(null)
       setSelectedDrawerListing(null)
+      navigateTo('/', null, currentTab === 'tracker' || currentTab === 'profile' || currentTab === 'settings' ? currentTab : 'catalogue')
       loadData()
     } catch (err: any) {
       setError(err.message || 'Failed to switch profile')
@@ -140,7 +140,8 @@ export function App() {
   const handleDeleteProfile = async (profileId: string) => {
     try {
       await deleteProfile(profileId)
-      setWorkspaceListing(null)
+      setSelectedDrawerListing(null)
+      navigateTo('/', null, currentTab === 'tracker' || currentTab === 'profile' || currentTab === 'settings' ? currentTab : 'catalogue')
       loadData()
     } catch (err: any) {
       setError(err.message || 'Failed to delete profile')
@@ -151,25 +152,27 @@ export function App() {
     loadData()
   }, [])
 
-  // Trigger Sync & listen to SSE stream
+  // Trigger Sync & listen to SSE stream (open EventSource first to avoid race)
   const handleTriggerSync = async () => {
     try {
       setIsSyncing(true)
-      await triggerSync()
-
-      // Connect to SSE stream
       const eventSource = new EventSource('/api/sync/stream')
 
       eventSource.onmessage = (event) => {
         try {
-          const data: SyncProgressEvent = JSON.parse(event.data)
-          setSyncProgress(data)
-
+          const data: SyncProgressEvent & { had_error?: boolean } = JSON.parse(event.data)
           if (data.step === 'done') {
             eventSource.close()
             setIsSyncing(false)
-            // Refresh listings list
+            setSyncProgress((prev) => ({
+              ...(prev || data),
+              step: 'done',
+              progress_pct: 100,
+              had_error: data.had_error || prev?.step === 'error',
+            }))
             fetchListings().then(setListings).catch(() => {})
+          } else {
+            setSyncProgress(data)
           }
         } catch (e) {
           console.error('SSE parse error:', e)
@@ -181,6 +184,8 @@ export function App() {
         setIsSyncing(false)
         fetchListings().then(setListings).catch(() => {})
       }
+
+      await triggerSync()
     } catch (err: any) {
       setError(err.message || 'Failed to start sync')
       setIsSyncing(false)
@@ -353,10 +358,14 @@ export function App() {
         <main className="flex-1">
           {workspaceListing ? (
             <ApplicationWorkspace
+              key={`${config?.active_profile_id || 'default'}:${workspaceListing.id}`}
               listing={workspaceListing}
               initialSubjectRefs={workspaceSubjectRefs}
               candidateName={config?.candidate_name}
               candidateEmail={config?.candidate_email}
+              activeProfileId={config?.active_profile_id}
+              availableLanguages={config?.available_languages}
+              baselineUrlPrefix={config?.baseline_url_prefix}
               onBack={() => navigateTo(currentTab === 'tracker' ? '/tracker' : (currentTab === 'profile' ? '/profile' : '/'), null, currentTab)}
               onStatusChanged={() => {
                 fetchListings().then(setListings).catch(() => {})
@@ -376,6 +385,10 @@ export function App() {
           ) : currentTab === 'tracker' ? (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <TrackerDashboard
+                key={config?.active_profile_id || 'default'}
+                onStatusChanged={() => {
+                  fetchListings().then(setListings).catch(() => {})
+                }}
                 onOpenWorkspace={(listingId) => {
                   const target = listings.find((l) => l.id === listingId)
                   if (target) {

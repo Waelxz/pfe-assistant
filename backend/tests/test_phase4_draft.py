@@ -69,7 +69,7 @@ def test_render_cover_letter_pdf(tmp_path):
     out_pdf = tmp_path / "test_cl.pdf"
     body = (
         "Madame, Monsieur,\n\n"
-        "Étudiant en 2ème année de Mastère Big Data Analytics & E-Commerce à l'IHEC Carthage, "
+        "Étudiant en 2ème année de Mastère Big Data Analytics & E-Commerce à Example University, "
         "je vous soumets ma candidature avec un vif intérêt.\n\n"
         "Cordialement,\n"
         "Alex Doe"
@@ -275,7 +275,7 @@ def test_api_documents_crud(tmp_path):
 def test_strip_trailing_signature():
     from backend.app.draft import _strip_trailing_signature
 
-    en = "Dear Team,\n\nI would love to join.\n\nBest regards,\nAlex Doe\n+216 12 345 678\nhttps://linkedin.com/in/wael"
+    en = "Dear Team,\n\nI would love to join.\n\nBest regards,\nAlex Doe\n+216 12 345 678\nhttps://linkedin.com/in/alex-doe"
     assert _strip_trailing_signature(en) == "Dear Team,\n\nI would love to join.\n\nBest regards,"
 
     fr = "Madame, Monsieur,\n\nJe postule.\n\nCordialement,\nAlex Doe"
