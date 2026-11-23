@@ -611,6 +611,9 @@ export function App() {
           onClose={() => {
             setSelectedDrawerListing(null)
           }}
+          onListingUpdated={() => {
+            fetchListings().then(setListings).catch(() => {})
+          }}
           onDraftWithSubjects={(l, refs) => {
             setSelectedDrawerListing(null)
             setWorkspaceSubjectRefs(refs)

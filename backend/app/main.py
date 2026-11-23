@@ -639,6 +639,7 @@ def extract_and_match(
         )
         return {
             "status": "success",
+            "extracted": True,
             "listing_id": listing.id,
             "company_name": listing.company_name,
             "extraction": extraction.structured_data,
@@ -671,6 +672,7 @@ def rematch_listing_subjects(
         )
         return {
             "status": "success",
+            "extracted": True,
             "listing_id": listing.id,
             "extraction": extraction.structured_data,
             "matches": [_serialize_subject_match(m) for m in matches],

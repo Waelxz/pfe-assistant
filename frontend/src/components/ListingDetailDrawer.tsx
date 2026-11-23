@@ -39,6 +39,7 @@ interface ListingDetailDrawerProps {
   mode?: 'catalogue' | 'workspace'
   onClose: (selectedRefs?: string[]) => void
   onDraftWithSubjects: (listing: ListingSummary, selectedRefs: string[]) => void
+  onListingUpdated?: () => void
 }
 
 export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
@@ -47,6 +48,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
   mode = 'catalogue',
   onClose,
   onDraftWithSubjects,
+  onListingUpdated,
 }) => {
   const [data, setData] = useState<ExtractionResponse | null>(null)
   const [loading, setLoading] = useState(false)
@@ -115,6 +117,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
         const sorted = [...res.matches].sort((a, b) => b.score - a.score)
         setSelectedRefs([sorted[0].subject_ref])
       }
+      onListingUpdated?.()
     } catch (err: any) {
       setError(err.message || 'Extraction failed')
     } finally {
@@ -129,6 +132,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
       setError(null)
       const res = await rematchListing(listing.id)
       setData(res)
+      onListingUpdated?.()
     } catch (err: any) {
       setError(err.message || 'Re-scoring failed')
     } finally {
@@ -293,7 +297,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                 Loading extraction and candidate matches...
               </p>
             </div>
-          ) : !data?.extracted ? (
+          ) : !(data?.extracted || data?.extraction) ? (
             <div className="space-y-6">
               {/* Extract CTA Banner */}
               <div className="text-center border border-indigo-200 bg-gradient-to-b from-indigo-50/60 to-white rounded-xl p-6 shadow-xs">
@@ -504,7 +508,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                       </strong>
                     </div>
 
-                    {rules.required_documents.length > 0 && (
+                    {(rules.required_documents?.length ?? 0) > 0 && (
                       <div className="sm:col-span-2 flex items-center gap-1.5 flex-wrap">
                         <span className="text-slate-500">Required Docs:</span>
                         {rules.required_documents.map((doc) => (
@@ -846,7 +850,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                                 )}
                               </div>
                             )}
-                            {match.matched_skills.length > 0 && (
+                            {match.matched_skills && match.matched_skills.length > 0 && (
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-[11px] font-semibold text-emerald-700">
                                   Matched:
@@ -861,7 +865,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                                 ))}
                               </div>
                             )}
-                            {match.missing_gaps.length > 0 && (
+                            {match.missing_gaps && match.missing_gaps.length > 0 && (
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-[11px] font-semibold text-rose-700">
                                   Gaps:
@@ -880,7 +884,7 @@ export const ListingDetailDrawer: React.FC<ListingDetailDrawerProps> = ({
                         )}
 
                         {/* Technologies Tags */}
-                        {s.technologies.length > 0 && (
+                        {s.technologies && s.technologies.length > 0 && (
                           <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
                             {s.technologies.map((tech) => (
                               <span
